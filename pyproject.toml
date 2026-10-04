@@ -1,0 +1,15 @@
+# Settings for ruff (`nix fmt`, and the lint check); the code needs nothing
+# installed: the workflow runs it as `python3 -m nixkeeper_hydra`.
+[project]
+name = "nixkeeper-hydra"
+version = "0.1.0"
+description = "A digest of Hydra's latest evaluation of nixpkgs master, for nixkeeper."
+license = "MIT"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 88  # Python's standard (Black / ruff default)
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, bugbear, pyupgrade, simplify, isort
+select = ["E", "F", "W", "B", "UP", "SIM", "I"]

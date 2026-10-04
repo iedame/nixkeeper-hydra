@@ -1,0 +1,43 @@
+name: "Digest: Hydra's latest evaluation"
+
+# Keeps the digest (the data branch: data/builds.csv.gz and data/meta.json) up
+# to date with Hydra's latest evaluation of nixpkgs master. Hourly, it asks
+# Hydra which evaluation is the latest (one small request); it reads that
+# evaluation's full page (one big one) only when there's a new evaluation,
+# while builds of it are still queued (every 6 hours), or once a day
+# (nixkeeper_hydra/cli.py). The data branch is main plus one commit with the
+# digest (scripts/data-branch.sh).
+
+on:
+  schedule:
+    - cron: '17 * * * *'  # hourly, off the hour
+  workflow_dispatch: {}    # lets you trigger a run manually from the Actions tab
+
+# One run at a time: a run waits for the last instead of cancelling it.
+concurrency:
+  group: data-branch
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # publishes the data branch
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: Restore the last published digest, on main
+        run: bash scripts/data-branch.sh restore
+
+      # The runner's Python 3: the digest uses the standard library only.
+      - name: Bring the digest up to date
+        run: python3 -m nixkeeper_hydra data
+
+      - name: Publish the digest if it changed
+        run: |
+          bash scripts/data-branch.sh publish "digest: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
