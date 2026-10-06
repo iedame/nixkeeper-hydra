@@ -2,8 +2,11 @@ import gzip
 import json
 import os
 import tempfile
+import threading
+import time
 import unittest
 from datetime import UTC, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
 from nixkeeper_hydra import cli, digest, hydra, page
@@ -168,3 +171,73 @@ class Main(unittest.TestCase):
             code, _ = self.run_main(d, [build("a", "ok", "1")])
             self.assertEqual(code, 1)
             self.assertEqual(os.listdir(d), [])
+
+
+class Deadline(unittest.TestCase):
+    """A whole answer has its deadline to arrive, however steadily it
+    trickles in: a real server on this machine sending a byte at a time
+    (/slow/...), or at once; the evaluation's page gzipped, as Hydra sends
+    it."""
+
+    LIST = b'<a href="https://hydra.nixos.org/eval/1829817">1829817</a>'
+    PAGE = b"<table>" + b"x" * 200 + b"</table>"
+
+    def setUp(self):
+        answers = {
+            "evals": (self.LIST, None),
+            "eval": (gzip.compress(self.PAGE), "gzip"),
+        }
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                key = "evals" if self.path.endswith("/evals") else "eval"
+                body, encoding = answers[key]
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                if encoding:
+                    self.send_header("Content-Encoding", encoding)
+                self.end_headers()
+                try:
+                    for i in range(len(body)):
+                        self.wfile.write(body[i : i + 1])
+                        self.wfile.flush()
+                        if self.path.startswith("/slow"):
+                            time.sleep(0.02)
+                except OSError:
+                    pass  # the client gave up
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server.daemon_threads = True
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        self.base = f"http://127.0.0.1:{server.server_address[1]}"
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        for patcher in (
+            mock.patch.object(hydra, "LIST_DEADLINE", 0.3),
+            mock.patch.object(hydra, "EVAL_DEADLINE", 0.3),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_at_once_arrives(self):
+        with mock.patch.object(hydra, "HYDRA_URL", self.base):
+            self.assertEqual(hydra.latest_eval(), 1829817)
+            path = os.path.join(self.dir.name, "eval.html")
+            hydra.download_eval(1829817, path)
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), self.PAGE)  # unpacked
+
+    def test_a_trickle_is_given_up(self):
+        # Byte by byte at 20 ms each: over a second, against 0.3 s.
+        with mock.patch.object(hydra, "HYDRA_URL", self.base + "/slow"):
+            started = time.monotonic()
+            with self.assertRaises(TimeoutError):
+                hydra.latest_eval()
+            with self.assertRaises(TimeoutError):
+                hydra.download_eval(1829817, os.path.join(self.dir.name, "e.html"))
+        self.assertLess(time.monotonic() - started, 2)

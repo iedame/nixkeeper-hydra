@@ -68,11 +68,19 @@
         };
 
         checks = {
-          tests = pkgs.runCommand "nixkeeper-hydra-tests" { nativeBuildInputs = [ pkgs.python3 ]; } ''
-            cd ${src}
-            python3 -m unittest discover -s tests -t . -v
-            touch $out
-          '';
+          tests =
+            pkgs.runCommand "nixkeeper-hydra-tests"
+              {
+                nativeBuildInputs = [ pkgs.python3 ];
+                # The deadline tests run a server on 127.0.0.1, which macOS's
+                # sandbox blocks unless asked.
+                __darwinAllowLocalNetworking = true;
+              }
+              ''
+                cd ${src}
+                python3 -m unittest discover -s tests -t . -v
+                touch $out
+              '';
           formatting = treefmt.config.build.check self;
           lint = pkgs.runCommand "nixkeeper-hydra-lint" { nativeBuildInputs = linters; } ''
             cd ${self}
