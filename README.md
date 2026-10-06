@@ -23,11 +23,13 @@ On the `data` branch:
   | `finished` | when it finished (ISO 8601, UTC); empty when queued |
   | `name` | what it builds (`wesnoth-1.18.8`): master's version |
   | `lastSuccessBuild`, `lastSuccessAt`, `lastSuccessName` | for a build that isn't ok, the job's last successful build, when it finished, and its name; empty when the digest hasn't seen one (it only knows those since it started) |
+  | `blockedBy` | for a `dependency` build, which dependency failed: the nixpkgs attribute of its job (`python314Packages.python-ldap`), or its derivation's name when no job of that platform builds it (`source`, a download; `python3.12-anyio-4.14.2`); several space-separated; empty until its page is read (below) |
 
 - [`data/meta.json`](https://raw.githubusercontent.com/iedame/nixkeeper-hydra/data/data/meta.json):
   which evaluation it is (`eval`), the nixpkgs commit Hydra evaluated
   (`revision`), when its page was read (`fetchedAt`), and how many jobs
-  have each status (`counts`). A reader can compare `eval` with the newest
+  have each status (`counts`); `blocked`: how many dependency failures'
+  blockers are known, and how many are still to read. A reader can compare `eval` with the newest
   on Hydra's [list of evaluations](https://hydra.nixos.org/jobset/nixpkgs/unstable/evals)
   to know whether the digest is current. (Not with `latest-eval`: that's the
   newest evaluation whose builds have all finished, often a day or more
@@ -55,6 +57,18 @@ aborted, newly succeeding, new, still succeeding, unfinished).
 A page with far fewer builds than nixpkgs has (cut short, or changed by
 Hydra) isn't published: nixkeeper then asks Hydra itself, as it does without
 the digest.
+
+**Which dependency failed.** Hydra's "Dependency failed" doesn't say which;
+the build's own page does, in its build steps, as
+[zh.fail](https://zh.fail/) reads it. Each run reads the pages of the
+dependency-failed builds it doesn't know yet, one a second, at most 1,500
+and 40 minutes a run (about 1,300 the first time, then only the new ones a
+new evaluation brings: a build Hydra doesn't redo keeps its id), whether
+or not there's a new evaluation. `data/blocked.json` keeps what each
+build's page said. A step's derivation is named by the job that builds it:
+the build Hydra says the failure came from, when that job builds the same
+derivation (it may be another package that needed it), else a job of the
+same platform building a derivation of that name.
 
 ## Running it
 

@@ -68,6 +68,29 @@ def latest_eval():
     return max(ids)
 
 
+# Seconds from one build page's request to the next: Hydra is asked
+# politely, a page at a time.
+PAUSE = 1.0
+_last = 0.0
+
+
+def build_page(build_id):
+    """A build's page (its steps: which failed, blocked.failed_steps), at
+    most one a PAUSE; raises on failure (the build is tried again next
+    run)."""
+    global _last
+    wait = _last + PAUSE - time.monotonic()
+    if wait > 0:
+        time.sleep(wait)
+    _last = time.monotonic()
+    req = urllib.request.Request(
+        f"{HYDRA_URL}/build/{build_id}", headers={"User-Agent": USER_AGENT}
+    )
+    deadline = time.monotonic() + LIST_DEADLINE
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return Deadline(resp, deadline).readall().decode("utf-8", "replace")
+
+
 def download_eval(eval_id, path):
     """Save evaluation eval_id's full page (every job) to path. Hydra takes a
     few minutes to make it; it comes compressed when Hydra will."""
