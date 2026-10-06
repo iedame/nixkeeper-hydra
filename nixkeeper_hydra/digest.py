@@ -16,6 +16,10 @@ builds.csv.gz's columns:
     lastSuccessAt,        successful build, when it finished, and its name;
     lastSuccessName       empty when the digest hasn't seen one (it only
                           knows those since it started)
+    blockedBy             for a build whose dependency failed: which, as
+                          nixpkgs attributes (or store names when no job
+                          builds them), space-separated; empty until its
+                          page is read (blocked.py)
 
 sorted by attr and system. The file is the same, byte for byte, when the
 builds are: unchanged data isn't published again."""
@@ -39,6 +43,7 @@ COLUMNS = (
     "lastSuccessBuild",
     "lastSuccessAt",
     "lastSuccessName",
+    "blockedBy",
 )
 
 
@@ -80,7 +85,7 @@ def write(directory, rows, meta):
     """Write builds.csv.gz and meta.json to directory."""
     os.makedirs(directory, exist_ok=True)
     text = io.StringIO()
-    writer = csv.DictWriter(text, COLUMNS, lineterminator="\n")
+    writer = csv.DictWriter(text, COLUMNS, restval="", lineterminator="\n")
     writer.writeheader()
     writer.writerows(rows)
     # mtime=0: the same rows give the same bytes.
