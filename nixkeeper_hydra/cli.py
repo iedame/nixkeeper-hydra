@@ -1,6 +1,7 @@
 """`python3 -m nixkeeper_hydra [DATA_DIR]`: bring the digest in DATA_DIR
 (default data/) up to date with Hydra's newest evaluation of nixpkgs master,
-downloading its page only when that can bring something new (due)."""
+downloading its page only when that can bring something new (due); and the
+branches' beside it (branches.py: haskell-updates), likewise."""
 
 import os
 import sys
@@ -9,7 +10,7 @@ import time
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
-from . import blocked, digest, hydra, page
+from . import blocked, branches, digest, hydra, page
 
 # While builds of the evaluation are still queued, its page is read again
 # this often, for their results; and at least this often anyway, for builds
@@ -100,6 +101,8 @@ def main(argv=None):
     started = time.monotonic()
     previous, meta = digest.read(directory)
     found = blocked.read(directory)
+    # The branches first, on their own: a failure keeps their last files.
+    branches.update_all(directory, now, due)
     latest = hydra.latest_eval()
     why = due(latest, meta, now)
     if not why:

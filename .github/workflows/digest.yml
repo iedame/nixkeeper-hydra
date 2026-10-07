@@ -5,8 +5,9 @@ name: "Digest: Hydra's latest evaluation"
 # Hydra which evaluation is the latest (one small request); it reads that
 # evaluation's full page (one big one) only when there's a new evaluation,
 # while builds of it are still queued (every 6 hours), or once a day
-# (nixkeeper_hydra/cli.py). The data branch is main plus one commit with the
-# digest (scripts/data-branch.sh).
+# (nixkeeper_hydra/cli.py); the haskell-updates branch's jobset likewise
+# (data/haskell-updates.json.gz, nixkeeper_hydra/branches.py). The data
+# branch is main plus one commit with the digest (scripts/data-branch.sh).
 
 on:
   schedule:

@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
-from nixkeeper_hydra import cli, digest, hydra, page
+from nixkeeper_hydra import branches, cli, digest, hydra, page
 
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
 EMPTY = {"lastSuccessBuild": "", "lastSuccessAt": "", "lastSuccessName": ""}
@@ -142,6 +142,7 @@ class Main(unittest.TestCase):
 
         with (
             mock.patch.object(hydra, "latest_eval", return_value=latest),
+            mock.patch.object(branches, "update_all"),
             mock.patch.object(hydra, "download_eval", side_effect=download) as dl,
             mock.patch.object(page, "parse", return_value=(builds, "abc")),
             mock.patch.object(cli, "MIN_BUILDS", 2),

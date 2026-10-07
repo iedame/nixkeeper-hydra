@@ -11,7 +11,7 @@ import time
 import unittest
 from unittest import mock
 
-from nixkeeper_hydra import blocked, cli, digest, hydra
+from nixkeeper_hydra import blocked, branches, cli, digest, hydra
 
 HERE = os.path.dirname(__file__)
 
@@ -184,6 +184,7 @@ class LookUp(unittest.TestCase):
             )
             with (
                 mock.patch.object(hydra, "latest_eval", return_value=8),
+                mock.patch.object(branches, "update_all"),
                 mock.patch.object(hydra, "download_eval") as dl,
                 mock.patch.object(cli, "due", return_value=None),
                 mock.patch.object(hydra, "build_page", return_value=fixture(347815300)),
