@@ -35,6 +35,25 @@ On the `data` branch:
   newest evaluation whose builds have all finished, often a day or more
   behind.)
 
+- [`data/haskell-updates.json.gz`](https://raw.githubusercontent.com/iedame/nixkeeper-hydra/data/data/haskell-updates.json.gz)
+  (about 125 KB): the same for the `haskell-updates` branch, where the
+  Haskell team updates `haskellPackages` before merging into master (about
+  every two weeks): its jobset's newest evaluation, each job's build there,
+  status and name (the branch's version), with which evaluation and commit
+  it is:
+
+  ```json
+  {"format": 1, "jobset": "nixpkgs/haskell-updates", "eval": 1829685,
+   "revision": "4e9d3032...", "fetchedAt": "...", "builds": 8709,
+   "counts": {"ok": 7777, "failed": 437, ...},
+   "columns": ["attr", "system", "build", "status", "name"],
+   "jobs": [["haskellPackages.Agda", "x86_64-linux", "347795412", "ok", "Agda-2.8.0.2"], ...]}
+  ```
+
+  Read on the same terms as master's (below); its page is small (about 350
+  KB), and the jobset is evaluated when the branch changes, every few days.
+  A run that can't read it keeps the last.
+
 The `data` branch is `main` plus one commit with the digest: each run replaces
 it, so no history piles up.
 

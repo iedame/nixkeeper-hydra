@@ -1,5 +1,6 @@
-"""Asking Hydra: which evaluation of nixpkgs master is the newest (one small
-request), and that evaluation's full page (one big one)."""
+"""Asking Hydra: which evaluation of a jobset (nixpkgs master's, by default)
+is the newest (one small request), and that evaluation's full page (one big
+one)."""
 
 import gzip
 import http.client
@@ -52,12 +53,12 @@ class Deadline:
         return self.read()
 
 
-def latest_eval():
-    """The id of the jobset's newest evaluation, from its list of evaluations
+def latest_eval(jobset=JOBSET):
+    """The id of jobset's newest evaluation, from its list of evaluations
     (a small page). Not its latest-eval page: that's the newest evaluation
     whose builds have all finished, often a day or more behind."""
     req = urllib.request.Request(
-        f"{HYDRA_URL}/jobset/{JOBSET}/evals", headers={"User-Agent": USER_AGENT}
+        f"{HYDRA_URL}/jobset/{jobset}/evals", headers={"User-Agent": USER_AGENT}
     )
     deadline = time.monotonic() + LIST_DEADLINE
     with urllib.request.urlopen(req, timeout=60) as resp:
