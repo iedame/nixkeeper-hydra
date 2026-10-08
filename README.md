@@ -22,7 +22,7 @@ On the `data` branch:
   | `status` | `ok`, `failed` (the package's own failure), `dependency` (a dependency failed), `unfinished` (aborted, timed out, a limit exceeded, ...) or `queued` (a job new to the digest, not built yet) |
   | `finished` | when it finished (ISO 8601, UTC); empty when queued |
   | `name` | what it builds (`wesnoth-1.18.8`): master's version |
-  | `lastSuccessBuild`, `lastSuccessAt`, `lastSuccessName` | for a build that isn't ok, the job's last successful build, when it finished, and its name; empty when it never succeeded, or isn't known yet (below) |
+  | `lastSuccessBuild`, `lastSuccessAt`, `lastSuccessName` | for a build that isn't ok, the job's last successful build, when it finished, and its name; `lastSuccessAt` is `never` (the others empty) when Hydra says the job never succeeded; all empty while it isn't known yet (below) |
   | `blockedBy` | for a `dependency` build, which dependency failed: the nixpkgs attribute of its job (`python314Packages.python-ldap`), or its derivation's name when no job of that platform builds it (`source`, a download; `python3.12-anyio-4.14.2`); several space-separated; empty until its page is read (below) |
 
 - [`data/meta.json`](https://raw.githubusercontent.com/iedame/nixkeeper-hydra/data/data/meta.json):
@@ -98,9 +98,9 @@ Each run asks Hydra about those it doesn't know yet
 (`/job/nixpkgs/unstable/<job>/latest`, the job's latest successful build),
 one a second, at most 1,500 a run within the same 40 minutes, whether or
 not there's a new evaluation. The answer goes into the row, which later
-digests carry on, so each job is asked once; one that never succeeded is
-remembered in `data/last-success.json`, and asked again only when Hydra
-builds it again.
+digests carry on, so each job is asked once; one that never succeeded says
+`never`, so readers needn't ask Hydra either, and is remembered in
+`data/last-success.json`, asked again only when Hydra builds it again.
 
 ## Running it
 

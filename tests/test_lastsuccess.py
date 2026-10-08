@@ -79,6 +79,10 @@ class LookUp(unittest.TestCase):
             },
         )
         self.assertEqual(never, {"hopeless x86_64-linux": "7"})
+        # In its row too, so readers needn't ask Hydra either.
+        self.assertEqual(
+            (rows[1]["lastSuccessBuild"], rows[1]["lastSuccessAt"]), ("", "never")
+        )
         # Asked once: the next run has nothing to ask.
         self.assertEqual(lastsuccess.wanted(rows, never), [])
 
@@ -108,6 +112,9 @@ class LookUp(unittest.TestCase):
             _, meta = digest.read(d)
             # A job no longer failing (gone) isn't remembered any more.
             self.assertEqual(lastsuccess.read(d), {"b x86_64-linux": "2"})
+            # b, answered "never" before the marker: marked when published.
+            written, _ = digest.read(d)
+            self.assertEqual(written[("b", "x86_64-linux")]["lastSuccessAt"], "never")
         self.assertEqual(meta["lastSuccess"], {"known": 1, "never": 1, "pending": 0})
 
 
