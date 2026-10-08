@@ -24,6 +24,7 @@ On the `data` branch:
   | `name` | what it builds (`wesnoth-1.18.8`): master's version |
   | `lastSuccessBuild`, `lastSuccessAt`, `lastSuccessName` | for a build that isn't ok, the job's last successful build, when it finished, and its name; `lastSuccessAt` is `never` (the others empty) when Hydra says the job never succeeded; all empty while it isn't known yet (below) |
   | `blockedBy` | for a `dependency` build, which dependency failed: the nixpkgs attribute of its job (`python314Packages.python-ldap`), or its derivation's name when no job of that platform builds it (`source`, a download; `python3.12-anyio-4.14.2`); several space-separated; empty until its page is read (below) |
+  | `failedBecause`, `failedExcerpt` | for a `failed` build, why, from its log: `compile`, `tests`, `link`, `header`, `cmake4` (CMake 4 dropped CMake < 3.5), `cmake`, `boost`, `pythonImport`, `pythonDeps`, `pythonBuild`, `pythonMetadata`, `haskellDeps`, `npm`, `lisp`, `home` (writes to `$HOME`), `download`, `hash`, `patch`, `substitute`, `missingFile`, `symlinks`, `patchelf`, `autotools`, `disk` (Hydra's side), or `other` (none of those); `noLog` when Hydra has no log. `failedExcerpt` is up to three lines that say so (the one a rule matched and those after it, or for `other` the last error line, or how the log ended). Both empty until its log is read (below) |
 
 - [`data/meta.json`](https://raw.githubusercontent.com/iedame/nixkeeper-hydra/data/data/meta.json):
   which evaluation it is (`eval`), the nixpkgs commit Hydra evaluated
@@ -31,7 +32,9 @@ On the `data` branch:
   have each status (`counts`); `blocked`: how many dependency failures'
   blockers are known, and how many are still to read; `lastSuccess`: of
   the jobs that aren't ok, how many have a known last success, never
-  succeeded, and are still to ask (below). A reader can compare `eval` with the newest
+  succeeded, and are still to ask (below); `reasons`: of the failed jobs,
+  how many have a reason known and still to read, and how many have each
+  reason (`by`). A reader can compare `eval` with the newest
   on Hydra's [list of evaluations](https://hydra.nixos.org/jobset/nixpkgs/unstable/evals)
   to know whether the digest is current. (Not with `latest-eval`: that's the
   newest evaluation whose builds have all finished, often a day or more
@@ -101,6 +104,20 @@ not there's a new evaluation. The answer goes into the row, which later
 digests carry on, so each job is asked once; one that never succeeded says
 `never`, so readers needn't ask Hydra either, and is remembered in
 `data/last-success.json`, asked again only when Hydra builds it again.
+
+**Why it failed.** Each run reads the logs of the failed builds it hasn't
+read yet: the build's derivation (`/build/<id>`, its JSON), then that
+derivation's log (`/log/<derivation>`; Hydra serves logs whole, so only
+the last 4 MB of a longer one is kept), one request a second, at most 600
+builds a run within the same 40 minutes, whether or not there's a new
+evaluation. About 4,700 failing on 2026-10-08 take several runs; after
+that, only those a new evaluation brings (a build Hydra doesn't redo keeps
+its id, and its log) and builds Hydra restarted (read again when they
+finish again). `data/reasons.json` keeps what each log said. The rules come
+from [nixpkgs-failure-dashboard](https://github.com/Sigmanificient/nixpkgs-failure-dashboard)'s
+classifier (MIT), under nixkeeper's names, with a few more (C++, Rust,
+linker, Haskell and unittest failures, `$HOME`); on a sample of 100 failed
+builds (2026-10-08), 89 got a reason other than `other`.
 
 ## Running it
 
