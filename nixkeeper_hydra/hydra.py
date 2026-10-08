@@ -148,3 +148,50 @@ def last_success(attr, system, jobset=JOBSET):
         "at": datetime.fromtimestamp(stoptime, UTC).isoformat(),
         "name": build.get("nixname") or "",
     }
+
+
+# A build log's end is where it says why: of a longer log, only so many of
+# its last bytes are kept (the rules' hints are near the end too).
+LOG_KEEP = 4 << 20
+
+
+def build_drv(build_id):
+    """A build's derivation (its store path), from its JSON, at most one a
+    PAUSE; raises on failure (the build is tried again next run)."""
+    _pace()
+    req = urllib.request.Request(
+        f"{HYDRA_URL}/build/{build_id}",
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+    )
+    deadline = time.monotonic() + LIST_DEADLINE
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        build = json.loads(Deadline(resp, deadline).readall())
+    drv = build.get("drvpath") or ""
+    if not drv.endswith(".drv"):
+        raise OSError(f"build {build_id}: no derivation in Hydra's answer")
+    return drv
+
+
+def build_log(drv):
+    """The log of the last build of derivation drv (a store path), as text,
+    its last LOG_KEEP bytes of a longer one; None when Hydra has none (404).
+    At most one a PAUSE; raises on any other failure. Hydra serves it whole
+    (no ranges), so it's read as it comes and only its end kept."""
+    _pace()
+    req = urllib.request.Request(
+        f"{HYDRA_URL}/log/{drv.rsplit('/', 1)[-1]}", headers={"User-Agent": USER_AGENT}
+    )
+    deadline = time.monotonic() + EVAL_DEADLINE // 4
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body, kept = Deadline(resp, deadline), bytearray()
+            while chunk := body.read(1 << 16):
+                kept += chunk
+                if len(kept) > 2 * LOG_KEEP:
+                    del kept[:-LOG_KEEP]
+    except urllib.error.HTTPError as e:
+        e.close()
+        if e.code == 404:
+            return None
+        raise
+    return bytes(kept[-LOG_KEEP:]).decode("utf-8", "replace")

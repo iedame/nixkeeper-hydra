@@ -10,7 +10,7 @@ import time
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
-from . import blocked, branches, digest, hydra, lastsuccess, page
+from . import blocked, branches, digest, hydra, lastsuccess, page, reasons
 
 # While builds of the evaluation are still queued, its page is read again
 # this often, for their results; and at least this often anyway, for builds
@@ -30,6 +30,12 @@ MAX_FAILURES_IN_A_ROW = 10
 # apart, within the same MAX_MINUTES: the 4,805 the digest lacked on
 # 2026-10-07 take a few runs; after that, a handful a new evaluation.
 MAX_LOOKUPS = 1500
+# Failed builds' logs read a run (reasons.py), two requests each (the
+# build's derivation, then its log), a second apart, within the same
+# MAX_MINUTES: the ~4,700 failing on 2026-10-08 take several runs; after
+# that, those a new evaluation brings (a build Hydra doesn't redo keeps its
+# id, and its log).
+MAX_LOGS = 600
 
 
 def look_up_blocked(rows, found, started):
@@ -91,6 +97,36 @@ def look_up_last_success(rows, never, started):
     return asked
 
 
+def look_up_reasons(rows, found, started):
+    """Read the logs of the failed builds reasons.wanted picks, at most
+    MAX_LOGS and MAX_MINUTES since started, into found ({build: [finished,
+    reason, excerpt]}); drop what it has on builds that aren't failed any
+    more. Returns how many were read."""
+    current = {r["build"] for r in rows if r["status"] == "failed"}
+    for build in set(found) - current:
+        del found[build]
+    read = in_a_row = 0
+    for row in reasons.wanted(rows, found)[:MAX_LOGS]:
+        if time.monotonic() - started > MAX_MINUTES * 60:
+            break
+        if in_a_row >= MAX_FAILURES_IN_A_ROW:
+            print("::warning::Hydra stopped answering for build logs.", file=sys.stderr)
+            break
+        try:
+            log = hydra.build_log(hydra.build_drv(row["build"]))
+        except (OSError, ValueError) as e:  # urllib's errors are OSErrors
+            print(f"  build {row['build']}: {e}", file=sys.stderr)
+            in_a_row += 1
+            continue
+        in_a_row = 0
+        read += 1
+        reason, lines = (
+            reasons.classify(log) if log is not None else (reasons.NO_LOG, "")
+        )
+        found[row["build"]] = [row["finished"], reason, lines]
+    return read
+
+
 def due(latest, meta, now):
     """Why the page should be read now, or None: never read yet, a newer
     evaluation, builds of this one still queued (every QUEUED_EVERY), or
@@ -108,11 +144,15 @@ def due(latest, meta, now):
     return None
 
 
-def publish(directory, rows, found, meta, read, pending, never, asked):
+def publish(directory, rows, found, meta, read, pending, never, asked, because=None):
     """Write the digest: rows with their blockedBy (from found), meta with
     how many dependency failures are known and still to read, and how many
     last successes are known, never were, and are still to ask (never,
-    asked: look_up_last_success's)."""
+    asked: look_up_last_success's); and why failed builds failed (because:
+    look_up_reasons' found, {} for none read yet), with how many of each."""
+    because = {} if because is None else because
+    for r in rows:
+        r.update(reasons.columns(r, because))
     by_build, by_name = blocked.names(rows)
     for r in rows:
         r["blockedBy"] = (
@@ -133,8 +173,10 @@ def publish(directory, rows, found, meta, read, pending, never, asked):
         del never[job]
     lastsuccess.mark_never(rows, never)
     meta["lastSuccess"] = lastsuccess.counts(rows, never)
+    meta["reasons"] = reasons.counts(rows)
     blocked.write(directory, found)
     lastsuccess.write(directory, never)
+    reasons.write(directory, because)
     digest.write(directory, rows, meta)
     print(
         f"  dependency failures: {read:,} read now, {known:,} known, "
@@ -144,6 +186,11 @@ def publish(directory, rows, found, meta, read, pending, never, asked):
     print(
         f"  last successes: {asked:,} asked now, {ls['known']:,} known, "
         f"{ls['never']:,} never, {ls['pending']:,} to ask"
+    )
+    rs = meta["reasons"]
+    print(
+        f"  failed builds' logs: {rs['known']:,} read, {rs['pending']:,} to read; "
+        + ", ".join(f"{n:,} {reason}" for reason, n in rs["by"].items())
     )
 
 
@@ -155,6 +202,7 @@ def main(argv=None):
     previous, meta = digest.read(directory)
     found = blocked.read(directory)
     never = lastsuccess.read(directory)
+    because = reasons.read(directory)
     # The branches first, on their own: a failure keeps their last files.
     branches.update_all(directory, now, due)
     latest = hydra.latest_eval()
@@ -165,10 +213,11 @@ def main(argv=None):
         rows = sorted(previous.values(), key=lambda r: (r["attr"], r["system"]))
         read, pending = look_up_blocked(rows, found, started)
         asked = look_up_last_success(rows, never, started)
-        if not read and not asked:
+        logs = look_up_reasons(rows, because, started)
+        if not read and not asked and not logs:
             print(f"Evaluation {latest}: nothing new since {meta['fetchedAt']}.")
             return 0
-        publish(directory, rows, found, meta, read, pending, never, asked)
+        publish(directory, rows, found, meta, read, pending, never, asked, because)
         return 0
     print(f"Reading evaluation {latest}: {why}...")
     with tempfile.TemporaryDirectory() as tmp:
@@ -190,6 +239,7 @@ def main(argv=None):
     counts = Counter(r["status"] for r in rows)
     read, pending = look_up_blocked(rows, found, started)
     asked = look_up_last_success(rows, never, started)
+    look_up_reasons(rows, because, started)
     known = sum(1 for r in rows if r["status"] != "ok" and r["lastSuccessBuild"])
     publish(
         directory,
@@ -206,6 +256,7 @@ def main(argv=None):
         pending,
         never,
         asked,
+        because,
     )
     print(
         "  "

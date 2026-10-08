@@ -22,6 +22,10 @@ builds.csv.gz's columns:
                           nixpkgs attributes (or store names when no job
                           builds them), space-separated; empty until its
                           page is read (blocked.py)
+    failedBecause,        for a failed build: why, from its log (reasons.py:
+    failedExcerpt         "cmake4", "hash", "patch", ..., "other"; "noLog"
+                          when Hydra has none), and the lines that say so;
+                          empty until its log is read
 
 sorted by attr and system. The file is the same, byte for byte, when the
 builds are: unchanged data isn't published again."""
@@ -46,6 +50,8 @@ COLUMNS = (
     "lastSuccessAt",
     "lastSuccessName",
     "blockedBy",
+    "failedBecause",
+    "failedExcerpt",
 )
 
 
