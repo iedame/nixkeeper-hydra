@@ -4,16 +4,19 @@ so a job already failing when the digest started (2026-10-04), or new to it
 and failing from the start, had none. Hydra says, a job at a time
 (hydra.last_success); the answer goes into the row's lastSuccess* columns,
 which every later digest carries on (digest.merge), so each job is asked
-once. A job that never succeeded is remembered too (last-success.json, by
-job, with the build it was asked about), and asked again only once its
-build changes: Hydra built it again, and this time it may have worked
-before failing."""
+once. A job that never succeeded says so in its row (lastSuccessAt
+"never", NEVER), so readers needn't ask Hydra either, and is remembered
+(last-success.json, by job, with the build it was asked about): asked again
+only once its build changes, as Hydra built it again and it may have
+worked in between."""
 
 import json
 import os
 
 CACHE = "last-success.json"
 NOT_OK = ("failed", "dependency", "unfinished")
+# lastSuccessAt of a job Hydra says never succeeded (its build and name empty).
+NEVER = "never"
 
 
 def job(row):
@@ -60,8 +63,21 @@ def counts(rows, never):
     return {"known": known, "never": gone, "pending": len(not_ok) - known - gone}
 
 
+def mark_never(rows, never):
+    """Write "never" into the rows never remembers for their current build
+    (those asked before the marker, or whose row lost it)."""
+    for r in rows:
+        if (
+            r["status"] in NOT_OK
+            and not r.get("lastSuccessBuild")
+            and never.get(job(r)) == r["build"]
+        ):
+            r["lastSuccessAt"] = NEVER
+
+
 def fill(row, found):
-    """Put Hydra's answer (hydra.last_success's, not None) into row."""
-    row["lastSuccessBuild"] = found["build"]
-    row["lastSuccessAt"] = found["at"]
-    row["lastSuccessName"] = found["name"]
+    """Put Hydra's answer (hydra.last_success's) into row: its last success,
+    or for None, that it never succeeded."""
+    row["lastSuccessBuild"] = found["build"] if found else ""
+    row["lastSuccessAt"] = found["at"] if found else NEVER
+    row["lastSuccessName"] = found["name"] if found else ""

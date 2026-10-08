@@ -15,8 +15,9 @@ builds.csv.gz's columns:
     lastSuccessBuild,     for a build that isn't ok: the job's last
     lastSuccessAt,        successful build, when it finished, and its name;
     lastSuccessName       seen by the digest, or asked of Hydra
-                          (lastsuccess.py); empty when it never succeeded,
-                          or isn't known yet
+                          (lastsuccess.py); lastSuccessAt "never" (the
+                          others empty) when Hydra says it never
+                          succeeded; all empty while not known yet
     blockedBy             for a build whose dependency failed: which, as
                           nixpkgs attributes (or store names when no job
                           builds them), space-separated; empty until its

@@ -62,8 +62,9 @@ def look_up_blocked(rows, found, started):
 
 def look_up_last_success(rows, never, started):
     """Ask Hydra the last successful build of the rows lastsuccess.wanted
-    picks, at most MAX_LOOKUPS and MAX_MINUTES since started: an answer
-    goes into the row, "never" into never. Returns how many were asked."""
+    picks, at most MAX_LOOKUPS and MAX_MINUTES since started: the answer
+    goes into the row (lastSuccessAt "never" when there's none), and "never"
+    into never too. Returns how many were asked."""
     asked = in_a_row = 0
     for row in lastsuccess.wanted(rows, never)[:MAX_LOOKUPS]:
         if time.monotonic() - started > MAX_MINUTES * 60:
@@ -82,8 +83,8 @@ def look_up_last_success(rows, never, started):
             continue
         in_a_row = 0
         asked += 1
+        lastsuccess.fill(row, found)
         if found:
-            lastsuccess.fill(row, found)
             never.pop(lastsuccess.job(row), None)
         else:
             never[lastsuccess.job(row)] = row["build"]
@@ -130,6 +131,7 @@ def publish(directory, rows, found, meta, read, pending, never, asked):
     }
     for job in [j for j in never if j not in current]:
         del never[job]
+    lastsuccess.mark_never(rows, never)
     meta["lastSuccess"] = lastsuccess.counts(rows, never)
     blocked.write(directory, found)
     lastsuccess.write(directory, never)
