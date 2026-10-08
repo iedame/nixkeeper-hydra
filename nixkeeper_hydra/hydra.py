@@ -1,13 +1,16 @@
 """Asking Hydra: which evaluation of a jobset (nixpkgs master's, by default)
-is the newest (one small request), and that evaluation's full page (one big
-one)."""
+is the newest (one small request), that evaluation's full page (one big
+one), a build's page, and a job's last successful build."""
 
 import gzip
 import http.client
+import json
 import re
 import shutil
 import time
+import urllib.error
 import urllib.request
+from datetime import UTC, datetime
 
 HYDRA_URL = "https://hydra.nixos.org"
 # The jobset nixkeeper reads builds from: nixpkgs master ("trunk" is the same
@@ -75,15 +78,21 @@ PAUSE = 1.0
 _last = 0.0
 
 
-def build_page(build_id):
-    """A build's page (its steps: which failed, blocked.failed_steps), at
-    most one a PAUSE; raises on failure (the build is tried again next
-    run)."""
+def _pace():
+    """Wait until PAUSE has passed since the last request of a page or a
+    job (the run's small requests, one at a time)."""
     global _last
     wait = _last + PAUSE - time.monotonic()
     if wait > 0:
         time.sleep(wait)
     _last = time.monotonic()
+
+
+def build_page(build_id):
+    """A build's page (its steps: which failed, blocked.failed_steps), at
+    most one a PAUSE; raises on failure (the build is tried again next
+    run)."""
+    _pace()
     req = urllib.request.Request(
         f"{HYDRA_URL}/build/{build_id}", headers={"User-Agent": USER_AGENT}
     )
@@ -105,3 +114,37 @@ def download_eval(eval_id, path):
         if resp.headers.get("Content-Encoding") == "gzip":
             body = gzip.GzipFile(fileobj=body)
         shutil.copyfileobj(body, out, 1 << 20)
+
+
+def last_success(attr, system, jobset=JOBSET):
+    """A job's last successful build in jobset: {"build": id, "at": when it
+    finished (ISO 8601, UTC), "name": what it built}, or None when Hydra has
+    none ("There is no successful build to redirect to."). Hydra's
+    /job/.../latest redirects to that build, whose JSON says the rest. At
+    most one a PAUSE; raises on any other failure (asked again next run)."""
+    _pace()
+    req = urllib.request.Request(
+        f"{HYDRA_URL}/job/{jobset}/{attr}.{system}/latest",
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+    )
+    deadline = time.monotonic() + LIST_DEADLINE
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            build = json.loads(Deadline(resp, deadline).readall())
+    except urllib.error.HTTPError as e:
+        try:
+            if e.code == 404 and "no successful build" in e.read().decode(
+                "utf-8", "replace"
+            ):
+                return None
+        finally:
+            e.close()
+        raise
+    stoptime = build.get("stoptime")
+    if not build.get("id") or not stoptime:
+        raise OSError(f"{attr}.{system}: Hydra's last success has no id or time")
+    return {
+        "build": str(build["id"]),
+        "at": datetime.fromtimestamp(stoptime, UTC).isoformat(),
+        "name": build.get("nixname") or "",
+    }

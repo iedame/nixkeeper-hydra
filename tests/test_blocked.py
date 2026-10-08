@@ -158,7 +158,9 @@ class LookUp(unittest.TestCase):
             "347815300": blocked.failed_steps(fixture(347815300)),
         }
         with tempfile.TemporaryDirectory() as d, mock.patch("builtins.print"):
-            cli.publish(d, [dict(r) for r in self.ROWS], found, {"eval": 8}, 2, 0)
+            cli.publish(
+                d, [dict(r) for r in self.ROWS], found, {"eval": 8}, 2, 0, {}, 0
+            )
             with gzip.open(os.path.join(d, digest.BUILDS), "rt") as f:
                 written = {r["attr"]: r["blockedBy"] for r in csv.DictReader(f)}
             with open(os.path.join(d, digest.META)) as f:
@@ -188,6 +190,7 @@ class LookUp(unittest.TestCase):
                 mock.patch.object(hydra, "download_eval") as dl,
                 mock.patch.object(cli, "due", return_value=None),
                 mock.patch.object(hydra, "build_page", return_value=fixture(347815300)),
+                mock.patch.object(hydra, "last_success", return_value=None),
                 mock.patch("builtins.print"),
             ):
                 self.assertEqual(cli.main([d]), 0)

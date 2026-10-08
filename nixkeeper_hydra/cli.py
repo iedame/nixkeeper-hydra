@@ -10,7 +10,7 @@ import time
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
-from . import blocked, branches, digest, hydra, page
+from . import blocked, branches, digest, hydra, lastsuccess, page
 
 # While builds of the evaluation are still queued, its page is read again
 # this often, for their results; and at least this often anyway, for builds
@@ -26,6 +26,10 @@ MIN_BUILDS = 100_000
 MAX_PAGES = 1500
 MAX_MINUTES = 40
 MAX_FAILURES_IN_A_ROW = 10
+# Jobs asked their last successful build a run (lastsuccess.py), a second
+# apart, within the same MAX_MINUTES: the 4,805 the digest lacked on
+# 2026-10-07 take a few runs; after that, a handful a new evaluation.
+MAX_LOOKUPS = 1500
 
 
 def look_up_blocked(rows, found, started):
@@ -56,6 +60,36 @@ def look_up_blocked(rows, found, started):
     return read, len(current - set(found))
 
 
+def look_up_last_success(rows, never, started):
+    """Ask Hydra the last successful build of the rows lastsuccess.wanted
+    picks, at most MAX_LOOKUPS and MAX_MINUTES since started: an answer
+    goes into the row, "never" into never. Returns how many were asked."""
+    asked = in_a_row = 0
+    for row in lastsuccess.wanted(rows, never)[:MAX_LOOKUPS]:
+        if time.monotonic() - started > MAX_MINUTES * 60:
+            break
+        if in_a_row >= MAX_FAILURES_IN_A_ROW:
+            print(
+                "::warning::Hydra stopped answering for last successes.",
+                file=sys.stderr,
+            )
+            break
+        try:
+            found = hydra.last_success(row["attr"], row["system"])
+        except (OSError, ValueError) as e:  # urllib's errors are OSErrors
+            print(f"  {row['attr']}.{row['system']}: {e}", file=sys.stderr)
+            in_a_row += 1
+            continue
+        in_a_row = 0
+        asked += 1
+        if found:
+            lastsuccess.fill(row, found)
+            never.pop(lastsuccess.job(row), None)
+        else:
+            never[lastsuccess.job(row)] = row["build"]
+    return asked
+
+
 def due(latest, meta, now):
     """Why the page should be read now, or None: never read yet, a newer
     evaluation, builds of this one still queued (every QUEUED_EVERY), or
@@ -73,9 +107,11 @@ def due(latest, meta, now):
     return None
 
 
-def publish(directory, rows, found, meta, read, pending):
+def publish(directory, rows, found, meta, read, pending, never, asked):
     """Write the digest: rows with their blockedBy (from found), meta with
-    how many dependency failures are known and still to read."""
+    how many dependency failures are known and still to read, and how many
+    last successes are known, never were, and are still to ask (never,
+    asked: look_up_last_success's)."""
     by_build, by_name = blocked.names(rows)
     for r in rows:
         r["blockedBy"] = (
@@ -86,11 +122,26 @@ def publish(directory, rows, found, meta, read, pending):
     known = sum(1 for r in rows if r["blockedBy"])
     meta = {k: v for k, v in meta.items() if k != "format"}
     meta["blocked"] = {"known": known, "pending": pending}
+    # Jobs that succeed again, or left the evaluation, needn't be remembered.
+    current = {
+        lastsuccess.job(r): r["build"]
+        for r in rows
+        if r["status"] in lastsuccess.NOT_OK
+    }
+    for job in [j for j in never if j not in current]:
+        del never[job]
+    meta["lastSuccess"] = lastsuccess.counts(rows, never)
     blocked.write(directory, found)
+    lastsuccess.write(directory, never)
     digest.write(directory, rows, meta)
     print(
         f"  dependency failures: {read:,} read now, {known:,} known, "
         f"{pending:,} to read"
+    )
+    ls = meta["lastSuccess"]
+    print(
+        f"  last successes: {asked:,} asked now, {ls['known']:,} known, "
+        f"{ls['never']:,} never, {ls['pending']:,} to ask"
     )
 
 
@@ -101,6 +152,7 @@ def main(argv=None):
     started = time.monotonic()
     previous, meta = digest.read(directory)
     found = blocked.read(directory)
+    never = lastsuccess.read(directory)
     # The branches first, on their own: a failure keeps their last files.
     branches.update_all(directory, now, due)
     latest = hydra.latest_eval()
@@ -110,10 +162,11 @@ def main(argv=None):
         # still be to read (the first runs, or a capped one).
         rows = sorted(previous.values(), key=lambda r: (r["attr"], r["system"]))
         read, pending = look_up_blocked(rows, found, started)
-        if not read:
+        asked = look_up_last_success(rows, never, started)
+        if not read and not asked:
             print(f"Evaluation {latest}: nothing new since {meta['fetchedAt']}.")
             return 0
-        publish(directory, rows, found, meta, read, pending)
+        publish(directory, rows, found, meta, read, pending, never, asked)
         return 0
     print(f"Reading evaluation {latest}: {why}...")
     with tempfile.TemporaryDirectory() as tmp:
@@ -133,8 +186,9 @@ def main(argv=None):
         return 1
     rows = digest.merge(builds, previous)
     counts = Counter(r["status"] for r in rows)
-    known = sum(1 for r in rows if r["status"] != "ok" and r["lastSuccessBuild"])
     read, pending = look_up_blocked(rows, found, started)
+    asked = look_up_last_success(rows, never, started)
+    known = sum(1 for r in rows if r["status"] != "ok" and r["lastSuccessBuild"])
     publish(
         directory,
         rows,
@@ -148,6 +202,8 @@ def main(argv=None):
         },
         read,
         pending,
+        never,
+        asked,
     )
     print(
         "  "
