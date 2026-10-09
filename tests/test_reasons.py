@@ -100,6 +100,17 @@ class Classify(unittest.TestCase):
         ended = "a\nb\n\nsed: no input files\n"
         self.assertEqual(reasons.classify(ended), ("other", "b\n\nsed: no input files"))
 
+    def test_control_characters_dropped(self):
+        log = "a.c:1:1: error: bad\x00 byte\x07\nnext\tline\n"
+        self.assertEqual(
+            reasons.classify(log)[1], "a.c:1:1: error: bad byte\nnext\tline"
+        )
+        seen = {"1": [FINISHED, "compile", "old\x00 excerpt"]}
+        self.assertEqual(
+            reasons.columns(row("a", "failed", "1"), seen)["failedExcerpt"],
+            "old excerpt",
+        )
+
     def test_excerpt_cut(self):
         long = "x" * 500
         log = f"a.c:1:1: error: {long}\n" + "\n".join(f"line {i}" for i in range(9))

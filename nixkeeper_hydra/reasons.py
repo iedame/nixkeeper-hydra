@@ -20,6 +20,10 @@ CACHE = "reasons.json"
 # A terminal's colours and links, which build logs keep (rustc's errors,
 # GCC's links to its warnings' documentation).
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+# Other control characters a log can hold (a NUL in one, 2026-10-09): not
+# for the digest's CSV, which some readers refuse with them (Python's before
+# 3.11). Tabs and line breaks stay.
+CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 # The lines kept to say why: the one a rule matched and those after it,
 # each cut to so many characters.
 EXCERPT_LINES = 3
@@ -217,7 +221,10 @@ ANY_ERROR = re.compile(r"(?i)(error:|exception:|fatal:)")
 def excerpt(lines, at):
     """The lines that say why: lines[at] and up to EXCERPT_LINES - 1 after
     it, each cut to EXCERPT_WIDTH characters, without trailing blanks."""
-    kept = [line.rstrip()[:EXCERPT_WIDTH] for line in lines[at : at + EXCERPT_LINES]]
+    kept = [
+        CONTROL.sub("", line).rstrip()[:EXCERPT_WIDTH]
+        for line in lines[at : at + EXCERPT_LINES]
+    ]
     while kept and not kept[-1]:
         kept.pop()
     return "\n".join(kept)
@@ -264,7 +271,8 @@ def columns(row, found):
     seen = found.get(row["build"]) if row["status"] == "failed" else None
     if not seen or seen[0] != row["finished"]:
         return {"failedBecause": "", "failedExcerpt": ""}
-    return {"failedBecause": seen[1], "failedExcerpt": seen[2]}
+    # Cleaned here too: excerpts read before CONTROL was.
+    return {"failedBecause": seen[1], "failedExcerpt": CONTROL.sub("", seen[2])}
 
 
 def counts(rows):
