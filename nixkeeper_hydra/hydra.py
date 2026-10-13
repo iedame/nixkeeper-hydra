@@ -16,7 +16,7 @@ HYDRA_URL = "https://hydra.nixos.org"
 # The jobset nixkeeper reads builds from: nixpkgs master ("trunk" is the same
 # jobset, by its old name).
 JOBSET = "nixpkgs/unstable"
-USER_AGENT = "nixkeeper-hydra (+https://github.com/iedame/nixkeeper-hydra)"
+USER_AGENT = "nixkeeper-hydra (+https://github.com/nixkeeper/digest-builds)"
 EVAL = re.compile(r"/eval/([0-9]+)")
 # The longest a whole answer may take to arrive, in seconds: urlopen's
 # timeout only bounds each wait for the next bytes, so a server sending a

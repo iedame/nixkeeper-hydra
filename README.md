@@ -1,7 +1,7 @@
 # nixkeeper-hydra
 
 A digest of [Hydra](https://hydra.nixos.org)'s builds of nixpkgs master, for
-[nixkeeper](https://github.com/iedame/nixkeeper): every job of the newest
+[nixkeeper](https://github.com/nixkeeper/nixkeeper): every job of the newest
 evaluation with its newest finished build, its status, and the last time it
 built successfully, in one small file kept up to date by a workflow.
 nixkeeper reads it instead of asking Hydra about each of its packages' jobs
@@ -11,7 +11,7 @@ one at a time.
 
 On the `data` branch:
 
-- [`data/builds.csv.gz`](https://raw.githubusercontent.com/iedame/nixkeeper-hydra/data/data/builds.csv.gz):
+- [`data/builds.csv.gz`](https://raw.githubusercontent.com/nixkeeper/digest-builds/data/data/builds.csv.gz):
   one row per job on x86_64-linux, aarch64-linux and aarch64-darwin, sorted
   by attribute and platform:
 
@@ -26,7 +26,7 @@ On the `data` branch:
   | `blockedBy` | for a `dependency` build, which dependency failed: the nixpkgs attribute of its job (`python314Packages.python-ldap`), or its derivation's name when no job of that platform builds it (`source`, a download; `python3.12-anyio-4.14.2`); several space-separated; empty until its page is read (below) |
   | `failedBecause`, `failedExcerpt` | for a `failed` build, why, from its log: `compile`, `tests`, `link`, `header`, `cmake4` (CMake 4 dropped CMake < 3.5), `cmake`, `boost`, `pythonImport`, `pythonDeps`, `pythonBuild`, `pythonMetadata`, `haskellDeps`, `npm`, `lisp`, `home` (writes to `$HOME`), `download`, `hash`, `patch`, `substitute`, `missingFile`, `symlinks`, `patchelf`, `autotools`, `disk` (Hydra's side), or `other` (none of those); `noLog` when Hydra has no log. `failedExcerpt` is up to three lines that say so (the one a rule matched and those after it, or for `other` the last error line, or how the log ended). Both empty until its log is read (below) |
 
-- [`data/meta.json`](https://raw.githubusercontent.com/iedame/nixkeeper-hydra/data/data/meta.json):
+- [`data/meta.json`](https://raw.githubusercontent.com/nixkeeper/digest-builds/data/data/meta.json):
   which evaluation it is (`eval`), the nixpkgs commit Hydra evaluated
   (`revision`), when its page was read (`fetchedAt`), and how many jobs
   have each status (`counts`); `blocked`: how many dependency failures'
@@ -40,7 +40,7 @@ On the `data` branch:
   newest evaluation whose builds have all finished, often a day or more
   behind.)
 
-- [`data/haskell-updates.json.gz`](https://raw.githubusercontent.com/iedame/nixkeeper-hydra/data/data/haskell-updates.json.gz)
+- [`data/haskell-updates.json.gz`](https://raw.githubusercontent.com/nixkeeper/digest-builds/data/data/haskell-updates.json.gz)
   (about 125 KB): the same for the `haskell-updates` branch, where the
   Haskell team updates `haskellPackages` before merging into master (about
   every two weeks): its jobset's newest evaluation, each job's build there,
