@@ -132,6 +132,15 @@ The idea, reading Hydra's evaluation page instead of asking about each job,
 comes from
 [nixpkgs-failure-notify](https://github.com/Sigmanificient/nixpkgs-failure-notify).
 
+## AI & automation disclosure
+
+This digest's code and documentation are written with the assistance of an
+AI (Claude, by Anthropic), with a person in the loop: nixkeeper's maintainer
+decides what to build, and reviews and tests every change before it's
+merged. The digest itself is automation: a scheduled workflow that reads
+public sources and publishes what it finds. It never comments on, closes or
+merges anything in nixpkgs.
+
 ## License
 
 MIT
