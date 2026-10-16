@@ -56,20 +56,38 @@ class Deadline:
         return self.read()
 
 
-def latest_eval(jobset=JOBSET):
-    """The id of jobset's newest evaluation, from its list of evaluations
-    (a small page). Not its latest-eval page: that's the newest evaluation
-    whose builds have all finished, often a day or more behind."""
+# An evaluation's row in that list: its id, then when it was made.
+EVAL_DATE = re.compile(
+    r'/eval/(\d+)">\d+</a></td>\s*<td[^>]*>\s*<time[^>]*datetime="([^"]+)"'
+)
+
+
+def _evals_page(jobset):
     req = urllib.request.Request(
         f"{HYDRA_URL}/jobset/{jobset}/evals", headers={"User-Agent": USER_AGENT}
     )
     deadline = time.monotonic() + LIST_DEADLINE
     with urllib.request.urlopen(req, timeout=60) as resp:
-        html = Deadline(resp, deadline).readall().decode("utf-8", "replace")
+        return Deadline(resp, deadline).readall().decode("utf-8", "replace")
+
+
+def latest_eval(jobset=JOBSET):
+    """The id of jobset's newest evaluation, from its list of evaluations
+    (a small page). Not its latest-eval page: that's the newest evaluation
+    whose builds have all finished, often a day or more behind."""
+    return latest_eval_dated(jobset)[0]
+
+
+def latest_eval_dated(jobset=JOBSET):
+    """(id, when it was made: ISO 8601, or None if the list doesn't say)
+    of jobset's newest evaluation, as latest_eval."""
+    html = _evals_page(jobset)
     ids = [int(i) for i in EVAL.findall(html)]
     if not ids:
         raise OSError("Hydra's list of evaluations has none")
-    return max(ids)
+    dates = {int(i): at for i, at in EVAL_DATE.findall(html)}
+    newest = max(ids)
+    return newest, dates.get(newest)
 
 
 # Seconds from one build page's request to the next: Hydra is asked

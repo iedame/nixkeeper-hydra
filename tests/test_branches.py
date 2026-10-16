@@ -56,7 +56,9 @@ class Update(unittest.TestCase):
 
     def run_update(self, d, latest, builds=BUILDS, now=NOW):
         with (
-            mock.patch.object(hydra, "latest_eval", return_value=latest) as asked,
+            mock.patch.object(
+                hydra, "latest_eval_dated", return_value=(latest, None)
+            ) as asked,
             mock.patch.object(hydra, "download_eval", side_effect=saved) as downloaded,
             mock.patch.object(page, "parse", return_value=(builds, "4e9d3032")),
         ):
@@ -108,15 +110,115 @@ class Update(unittest.TestCase):
                     branches.BRANCHES,
                     {"haskell-updates": ("nixpkgs/haskell-updates", 5)},
                 ),
-                mock.patch.object(hydra, "latest_eval", return_value=1829700),
+                mock.patch.object(
+                    hydra,
+                    "latest_eval_dated",
+                    return_value=(1829700, "2026-10-14T07:18:17Z"),
+                ),
                 mock.patch.object(hydra, "download_eval"),
                 mock.patch.object(page, "parse", return_value=(BUILDS, "x")),
             ):
                 branches.update_all(d, NOW, cli.due)
-            with mock.patch.object(hydra, "latest_eval", side_effect=OSError("down")):
+            with mock.patch.object(
+                hydra, "latest_eval_dated", side_effect=OSError("down")
+            ):
                 branches.update_all(d, NOW, cli.due)
             self.assertEqual(branches.read(d, "haskell-updates"), before)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StagingNext(unittest.TestCase):
+    """staging-next: all of nixpkgs, kept as its differences from master."""
+
+    def setUp(self):
+        for patcher in (
+            mock.patch("builtins.print"),
+            mock.patch.dict(
+                branches.BRANCHES, {"staging-next": ("nixpkgs/staging-next", 1)}
+            ),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def job(self, attr, status, name):
+        return {
+            "attr": attr,
+            "system": "x86_64-linux",
+            "build": "1",
+            "status": status,
+            "finished": "",
+            "name": name,
+        }
+
+    def test_only_what_differs_from_master(self):
+        builds = [
+            self.job("coreutils", "ok", "coreutils-9.12"),  # updated there
+            self.job("bash", "ok", "bash-5.3p15"),  # as on master
+            self.job("vim", "failed", "vim-9.2.1164"),  # fails there only
+            self.job("new", "ok", "new-1.0"),  # master hasn't it
+        ]
+        master = {
+            ("coreutils", "x86_64-linux"): {"status": "ok", "name": "coreutils-9.11"},
+            ("bash", "x86_64-linux"): {"status": "ok", "name": "bash-5.3p15"},
+            ("vim", "x86_64-linux"): {"status": "ok", "name": "vim-9.2.1164"},
+        }
+        with (
+            tempfile.TemporaryDirectory() as d,
+            mock.patch.object(
+                hydra,
+                "latest_eval_dated",
+                return_value=(1830049, "2026-10-14T07:18:17Z"),
+            ),
+            mock.patch.object(hydra, "download_eval", side_effect=saved),
+            mock.patch.object(page, "parse", return_value=(builds, "4dfbeb6a")),
+        ):
+            branches.update(d, "staging-next", NOW, cli.due, master, 1830315)
+            found = branches.read(d, "staging-next")
+        self.assertEqual([job[0] for job in found["jobs"]], ["coreutils", "new", "vim"])
+        self.assertEqual(found["evaluatedAt"], "2026-10-14T07:18:17Z")
+        self.assertEqual(
+            (found["builds"], found["counts"], found["differentFrom"]),
+            (4, {"failed": 1, "ok": 3}, 1830315),
+        )
+
+    def test_whole_without_masters_digest(self):
+        builds = [self.job("bash", "ok", "bash-5.3p15")]
+        with (
+            tempfile.TemporaryDirectory() as d,
+            mock.patch.object(
+                hydra,
+                "latest_eval_dated",
+                return_value=(1830049, "2026-10-14T07:18:17Z"),
+            ),
+            mock.patch.object(hydra, "download_eval", side_effect=saved),
+            mock.patch.object(page, "parse", return_value=(builds, "4dfbeb6a")),
+        ):
+            branches.update(d, "staging-next", NOW, cli.due, {}, None)
+            found = branches.read(d, "staging-next")
+        self.assertEqual(len(found["jobs"]), 1)
+        self.assertNotIn("differentFrom", found)
+
+
+class EvalDate(unittest.TestCase):
+    def test_from_the_list_of_evaluations(self):
+        # A row of https://hydra.nixos.org/jobset/nixpkgs/staging-next/evals
+        html = (
+            '<tr><td><a class="row-link" href="https://hydra.nixos.org/eval/'
+            '1830224">1830224</a></td>          <td class="nowrap"><time '
+            'data-timestamp="1791962297" datetime="2026-10-14T07:18:17Z" '
+            'title="2026-10-14 07:18:17 (UTC)" class="date is-relative">2d ago'
+            '</time></td></tr><tr><td><a class="row-link" href="https://'
+            'hydra.nixos.org/eval/1830155">1830155</a></td><td class="nowrap">'
+            '<time datetime="2026-10-13T05:41:52Z">3d ago</time></td></tr>'
+        )
+        with mock.patch.object(hydra, "_evals_page", return_value=html):
+            self.assertEqual(
+                hydra.latest_eval_dated("nixpkgs/staging-next"),
+                (1830224, "2026-10-14T07:18:17Z"),
+            )
+            self.assertEqual(hydra.latest_eval("nixpkgs/staging-next"), 1830224)
+        with mock.patch.object(hydra, "_evals_page", return_value='/eval/7">7<'):
+            self.assertEqual(hydra.latest_eval_dated(), (7, None))

@@ -59,6 +59,19 @@ On the `data` branch:
   KB), and the jobset is evaluated when the branch changes, every few days.
   A run that can't read it keeps the last.
 
+- [`data/staging-next.json.gz`](https://raw.githubusercontent.com/nixkeeper/digest-builds/data/data/staging-next.json.gz):
+  the same for `staging-next`, where mass rebuilds (libraries, compilers,
+  glibc) wait for their merge into master, about every two to three weeks.
+  Its jobset is all of nixpkgs (about 217,000 jobs, a 150 MB page Hydra
+  sends in under a minute), evaluated every day or two, so its
+  evaluation is a day or two old, more between cycles (`evaluatedAt`,
+  from its list of evaluations; `fetchedAt` is when it was read, `eval`
+  and `revision` which one). Only the jobs that differ from master's digest
+  are kept: another status or another version (its updates, and what
+  builds or fails differently there), with `differentFrom`, the master
+  evaluation compared with; `builds` and `counts` are still all of them.
+  Plain `staging` isn't here: Hydra builds only a handful of its jobs.
+
 The `data` branch is `main` plus one commit with the digest: each run replaces
 it, so no history piles up.
 
