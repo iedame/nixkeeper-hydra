@@ -46,9 +46,16 @@ def look_up_blocked(rows, found, started):
     current = {r["build"] for r in rows if r["status"] == "dependency"}
     for build in set(found) - current:
         del found[build]
-    wanted = sorted(current - set(found))
+    read = read_pages(sorted(current - set(found)), found, started, MAX_PAGES)
+    return read, len(current - set(found))
+
+
+def read_pages(builds, found, started, max_pages):
+    """Read the pages of builds (their failed steps) into found, at most
+    max_pages, and within MAX_MINUTES since started. Returns how many were
+    read."""
     read = in_a_row = 0
-    for build in wanted[:MAX_PAGES]:
+    for build in builds[: max(max_pages, 0)]:
         if time.monotonic() - started > MAX_MINUTES * 60:
             break
         if in_a_row >= MAX_FAILURES_IN_A_ROW:
@@ -63,7 +70,60 @@ def look_up_blocked(rows, found, started):
         except OSError as e:  # urllib's errors are OSErrors
             print(f"  build {build}: {e}", file=sys.stderr)
             in_a_row += 1
-    return read, len(current - set(found))
+    return read
+
+
+def look_up_staging_next_blocked(directory, master, started, max_pages):
+    """Which dependency each staging-next job fails because of, for those
+    that build on master at the same version (what staging-next breaks: a
+    dependency's failure there, not the package's own): their pages read
+    as master's (read_pages, within what's left of the run's max_pages),
+    kept in blocked-staging-next.json, and staging-next.json.gz rewritten
+    with a blockedBy column (named by master's and staging-next's jobs) and
+    "blocked": {"known", "pending"}. master: the master digest's rows by
+    (attr, system). Returns (read, pending)."""
+    body = branches.read(directory, "staging-next")
+    if not body or not master:
+        return 0, 0
+    columns = [c for c in body["columns"] if c != "blockedBy"]
+    jobs = [dict(zip(body["columns"], values, strict=True)) for values in body["jobs"]]
+    wanted = {
+        j["build"]
+        for j in jobs
+        if j["status"] == "dependency"
+        and (m := master.get((j["attr"], j["system"])))
+        and m["status"] == "ok"
+        and m["name"] == j["name"]
+    }
+    found = blocked.read(directory, blocked.STAGING_NEXT_CACHE)
+    for build in set(found) - wanted:
+        del found[build]
+    read = read_pages(sorted(wanted - set(found)), found, started, max_pages)
+    blocked.write(directory, found, blocked.STAGING_NEXT_CACHE)
+    by_build, by_name = blocked.names([*master.values(), *jobs])
+    for j in jobs:
+        j["blockedBy"] = (
+            blocked.blocked_by(j, found, by_build, by_name)
+            if j["build"] in wanted
+            else ""
+        )
+    pending = len(wanted - set(found))
+    known = sum(1 for j in jobs if j["blockedBy"])
+    branches.write(
+        directory,
+        "staging-next",
+        {
+            **{k: v for k, v in body.items() if k not in ("format", "jobs")},
+            "columns": [*columns, "blockedBy"],
+            "blocked": {"known": known, "pending": pending},
+            "jobs": [[j.get(c) or "" for c in [*columns, "blockedBy"]] for j in jobs],
+        },
+    )
+    print(
+        f"staging-next's dependency failures: {read:,} read now, {known:,} known, "
+        f"{pending:,} to read"
+    )
+    return read, pending
 
 
 def look_up_last_success(rows, never, started):
@@ -212,6 +272,8 @@ def main(argv=None):
         # still be to read (the first runs, or a capped one).
         rows = sorted(previous.values(), key=lambda r: (r["attr"], r["system"]))
         read, pending = look_up_blocked(rows, found, started)
+        # staging-next's after master's, with the pages left.
+        look_up_staging_next_blocked(directory, previous, started, MAX_PAGES - read)
         asked = look_up_last_success(rows, never, started)
         logs = look_up_reasons(rows, because, started)
         if not read and not asked and not logs:
@@ -238,6 +300,12 @@ def main(argv=None):
     rows = digest.merge(builds, previous)
     counts = Counter(r["status"] for r in rows)
     read, pending = look_up_blocked(rows, found, started)
+    look_up_staging_next_blocked(
+        directory,
+        {(r["attr"], r["system"]): r for r in rows},
+        started,
+        MAX_PAGES - read,
+    )
     asked = look_up_last_success(rows, never, started)
     look_up_reasons(rows, because, started)
     known = sum(1 for r in rows if r["status"] != "ok" and r["lastSuccessBuild"])
