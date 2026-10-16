@@ -1,7 +1,7 @@
 """`python3 -m nixkeeper_hydra [DATA_DIR]`: bring the digest in DATA_DIR
 (default data/) up to date with Hydra's newest evaluation of nixpkgs master,
 downloading its page only when that can bring something new (due); and the
-branches' beside it (branches.py: haskell-updates), likewise."""
+branches' beside it (branches.py: haskell-updates, staging-next), likewise."""
 
 import os
 import sys
@@ -204,7 +204,7 @@ def main(argv=None):
     never = lastsuccess.read(directory)
     because = reasons.read(directory)
     # The branches first, on their own: a failure keeps their last files.
-    branches.update_all(directory, now, due)
+    branches.update_all(directory, now, due, previous, meta.get("eval"))
     latest = hydra.latest_eval()
     why = due(latest, meta, now)
     if not why:
