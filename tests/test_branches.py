@@ -1,5 +1,6 @@
 import io
 import tempfile
+import time
 import unittest
 from datetime import UTC, datetime, timedelta
 from unittest import mock
@@ -222,3 +223,89 @@ class EvalDate(unittest.TestCase):
             self.assertEqual(hydra.latest_eval("nixpkgs/staging-next"), 1830224)
         with mock.patch.object(hydra, "_evals_page", return_value='/eval/7">7<'):
             self.assertEqual(hydra.latest_eval_dated(), (7, None))
+
+
+class StagingNextBlockers(unittest.TestCase):
+    """Which dependency each staging-next job fails because of, for those
+    that build on master (cli.look_up_staging_next_blocked)."""
+
+    def setUp(self):
+        patcher = mock.patch("builtins.print")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def master(self, attr, status, name, build="1"):
+        return {
+            "attr": attr,
+            "system": "x86_64-linux",
+            "status": status,
+            "name": name,
+            "build": build,
+        }
+
+    def test_named_and_written(self):
+        jobs = [
+            # Blocked there, builds on master: read.
+            ["blender", "x86_64-linux", "11", "dependency", "blender-5.0.1"],
+            # Blocked on master too: master's own blockers say it.
+            ["krita", "x86_64-linux", "12", "dependency", "krita-6.0"],
+            # Its own failure (staging-next breaks): no page to read.
+            ["afew", "x86_64-linux", "13", "failed", "afew-4.0.2"],
+            # The blocker's own job there, named by its attribute.
+            ["rocmPackages.clang", "x86_64-linux", "99", "failed", "clang-22.0.0-rocm"],
+        ]
+        master = {
+            (r["attr"], r["system"]): r
+            for r in (
+                self.master("blender", "ok", "blender-5.0.1"),
+                self.master("krita", "dependency", "krita-6.0"),
+                self.master("afew", "ok", "afew-4.0.2"),
+            )
+        }
+        with tempfile.TemporaryDirectory() as d:
+            branches.write(
+                d,
+                "staging-next",
+                {
+                    "jobset": "nixpkgs/staging-next",
+                    "eval": 1830302,
+                    "columns": list(branches.COLUMNS),
+                    "jobs": jobs,
+                },
+            )
+            with (
+                mock.patch.object(hydra, "build_page", return_value="") as asked,
+                mock.patch.object(
+                    cli.blocked,
+                    "failed_steps",
+                    return_value=[["clang-22.0.0-rocm", 99]],
+                ),
+            ):
+                got = cli.look_up_staging_next_blocked(d, master, time.monotonic(), 10)
+            self.assertEqual(got, (1, 0))
+            asked.assert_called_once_with("11")
+            found = branches.read(d, "staging-next")
+            # Known now: not read again.
+            with mock.patch.object(hydra, "build_page") as again:
+                cli.look_up_staging_next_blocked(d, master, time.monotonic(), 10)
+            again.assert_not_called()
+        self.assertEqual(found["columns"][-1], "blockedBy")
+        by_attr = {j[0]: j[-1] for j in found["jobs"]}
+        self.assertEqual(by_attr["blender"], "rocmPackages.clang")
+        self.assertEqual((by_attr["krita"], by_attr["afew"]), ("", ""))
+        self.assertEqual(found["blocked"], {"known": 1, "pending": 0})
+
+    def test_no_pages_left_this_run(self):
+        jobs = [["blender", "x86_64-linux", "11", "dependency", "blender-5.0.1"]]
+        master = {
+            ("blender", "x86_64-linux"): self.master("blender", "ok", "blender-5.0.1")
+        }
+        with tempfile.TemporaryDirectory() as d:
+            branches.write(
+                d, "staging-next", {"columns": list(branches.COLUMNS), "jobs": jobs}
+            )
+            with mock.patch.object(hydra, "build_page") as asked:
+                got = cli.look_up_staging_next_blocked(d, master, time.monotonic(), 0)
+            asked.assert_not_called()
+            self.assertEqual(got, (0, 1))
+            self.assertEqual(branches.read(d, "staging-next")["blocked"]["pending"], 1)

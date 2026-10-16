@@ -18,6 +18,9 @@ import os
 import re
 
 CACHE = "blocked.json"
+# staging-next's (cli.look_up_staging_next_blocked): kept apart, as master's
+# drops the builds master's evaluation no longer has.
+STAGING_NEXT_CACHE = "blocked-staging-next.json"
 
 STEPS = re.compile(r'id="tabs-buildsteps".*?</table>', re.S)
 ROW = re.compile(r"<tr>(.*?)</tr>", re.S)
@@ -130,17 +133,18 @@ def blocked_by(row, found, by_build, by_name):
     return " ".join(seen)
 
 
-def read(directory):
-    """blocked.json: {build id (a string): [[name, build], ...]}, or {}."""
+def read(directory, name=CACHE):
+    """blocked.json (or name): {build id (a string): [[name, build], ...]},
+    or {}."""
     try:
-        with open(os.path.join(directory, CACHE)) as f:
+        with open(os.path.join(directory, name)) as f:
             return json.load(f)
     except (FileNotFoundError, ValueError):
         return {}
 
 
-def write(directory, found):
+def write(directory, found, name=CACHE):
     os.makedirs(directory, exist_ok=True)
-    with open(os.path.join(directory, CACHE), "w") as f:
+    with open(os.path.join(directory, name), "w") as f:
         json.dump(found, f, separators=(",", ":"), sort_keys=True)
         f.write("\n")

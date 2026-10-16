@@ -70,6 +70,12 @@ On the `data` branch:
   are kept: another status or another version (its updates, and what
   builds or fails differently there), with `differentFrom`, the master
   evaluation compared with; `builds` and `counts` are still all of them.
+  For a job that fails there by a dependency while it builds on master at
+  the same version, `blockedBy` names that dependency (as in
+  `builds.csv.gz`; its page read like master's, after master's within the
+  run's pages, kept in `blocked-staging-next.json`), and `blocked` says how
+  many are known and still to read: what staging-next breaks, by the
+  dependency that breaks it.
   Plain `staging` isn't here: Hydra builds only a handful of its jobs.
 
 The `data` branch is `main` plus one commit with the digest: each run replaces
